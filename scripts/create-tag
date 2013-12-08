@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+ROOT_LOC="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )";
+SCRIPT_LOC="$( cd "$ROOT_LOC/tags" && pwd )";
+CACHE_LOC="$( cd "$ROOT_LOC/cache" && pwd )";
+
+$( cd $SCRIPT_LOC && mkdir "$@" );
+TAG_LIST="$CACHE_LOC/tag-list.cache";
+[ -f $TAG_LIST ] && rm $TAG_LIST
+complete -W "$(echo `tag keys`)" tag

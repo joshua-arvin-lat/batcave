@@ -1,0 +1,47 @@
+#!/usr/bin/env python
+
+import os, sys
+FILE_PATH = os.path.dirname(os.path.realpath(__file__))
+SCRIPTS_PATH = os.path.join(FILE_PATH, 'scripts')
+
+sys.path.append(os.path.abspath(os.path.join(FILE_PATH, '..')))
+
+def location():
+    directory = os.path.dirname(os.path.realpath(__file__))
+    print directory
+
+def activate():
+    directory = os.path.dirname(os.path.realpath(__file__))
+    enter = os.path.join(directory, 'scripts', 'activate')
+    print "source %s" % enter
+
+def deactivate():
+    directory = os.path.dirname(os.path.realpath(__file__))
+    exit = os.path.join(directory, 'scripts', 'deactivate')
+    print "source %s" % exit
+
+def process_args():
+    arg_list = sys.argv
+    arg_length = len(arg_list)
+
+    # process arguments
+    if arg_length == 1:
+        print "Usage: `batcave enter`"
+
+    else:
+        command = arg_list[1]
+
+        if command == 'enter':
+            activate()
+        elif command == 'exit':
+            deactivate()
+        elif command == 'location':
+            location()
+
+def main():
+    process_args()
+
+if __name__ == "__main__":
+    main()
+
+

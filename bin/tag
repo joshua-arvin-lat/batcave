@@ -1,0 +1,412 @@
+#!/usr/bin/env python
+
+from operator import itemgetter
+import argparse
+import os, sys
+import shutil
+
+FILE_PATH = os.path.dirname(os.path.realpath(__file__))
+TAGS_PATH = os.path.abspath(os.path.join(FILE_PATH, '..', 'tags'))
+SCRIPTS_PATH = os.path.abspath(os.path.join(FILE_PATH, '..', 'scripts'))
+CACHE_PATH = os.path.abspath(os.path.join(FILE_PATH, '..', 'cache'))
+
+EPILOG = """
+example usage:
+  `tag create -t <tag 1> <tag 2>`
+  tag add -o <file / folder> -t <tag 1> <tag 2> ... <tag n>
+  tag remove -o <file / folder> -t <tag 1> <tag 2> ... <tag n>
+
+  `tag create -t tag1`
+  `tag create -t tag2/subtag`
+  `tag create -t tag1 tag2 tag2/subtag`
+
+  tag add -o file1 -t tag1
+  tag add -o file1 file2 -t tag1
+  tag add -o file1 folder1 -t tag1
+  tag add -o folder1 -t tag1
+  tag add -o file1 -t tag1 tag2
+  tag add -o file1 file2 -t tag2/subtag
+
+  tag remove -o file1 -t tag1
+  tag remove -o file1 file2 -t tag1
+  tag remove -o file1 folder1 -t tag1
+  tag remove -o folder1 -t tag1
+  tag remove -o file1 -t tag1 tag2
+  tag remove -o file1 file2 -t tag2/subtag
+
+  tag list
+  tag list -f tag1
+  tag list -f tag1 --no-cache
+  tag list --detailed | grep -v '0  '
+  tag list --detailed -f tag8
+  tag list --detailed -f tag1/tag1c --exact --paths-only
+
+  tag list-objects -f tag1/tag1b
+  tag list-objects -f tag3 --recursive
+
+  tag list-tags -o object1
+
+  tag move -t tag2 tag1/tag2
+  tag move-object -o loc1 loc2
+"""
+
+def delete_cache(name):
+    cache_file = cache_location(name)
+    if os.path.isfile(cache_file):
+        os.remove(cache_file)
+
+def cache_location(name):
+    return os.path.join(CACHE_PATH, name + '.cache')
+
+def read_cache(name):
+    content = None
+
+    try:
+        with open(cache_location(name)) as text_file:
+            content = [line.rstrip() for line in text_file]
+
+    except IOError:
+        return None
+
+    return content
+
+def save_cache(name, output):
+    with open(cache_location(name), "w") as text_file:
+        text_file.write("\n".join(output))
+
+def message(text, error=False, quiet=False):
+    if error:
+        print "Error: %s" % text
+    else:
+        if quiet == False:
+            print text
+
+def filter_list(input_list, query=None, detailed=False, exact=False):
+    if query is None:
+        return input_list
+
+    else:
+        if detailed:
+            if exact:
+                filtered_list = [x for x in input_list if query == x[0]]
+            else:
+                filtered_list = [x for x in input_list if query in x[0]]
+
+        else:    
+            if exact:
+                filtered_list = [x for x in input_list if query == x]
+            else:
+                filtered_list = [x for x in input_list if query in x]
+        
+        return filtered_list
+
+def all_tags(no_cache = False):    
+    cached_results = read_cache('tag-list')
+
+    if no_cache is False and not cached_results == None:
+        return cached_results
+
+    results = []
+
+    for dirname, dirnames, filenames in os.walk(TAGS_PATH):
+        for subdirname in dirnames:
+            temp = os.path.join(dirname, subdirname)
+
+            if os.path.islink(temp):
+                continue
+
+            temp = temp.replace(TAGS_PATH + '/', '')
+            
+            results.append(temp)
+
+    sorted_results = sorted(results, key=str.lower)
+    save_cache('tag-list', sorted_results)
+
+    return sorted_results
+
+def all_tags_detailed(dirs=True, files=True):    
+    results = []
+
+    for dirname, dirnames, filenames in os.walk(TAGS_PATH):
+        for subdirname in dirnames:
+            temp = os.path.join(dirname, subdirname)
+            
+            if os.path.islink(temp):
+                continue
+
+            file_count = 0
+            file_list = []
+            files = os.listdir(temp)
+
+            for f in files:
+                filename = os.path.join(temp, f)
+                if os.path.islink(filename):
+                    file_count += 1
+                    target = os.readlink(filename)
+                    if os.path.isdir(target):
+                        if dirs:
+                            file_list.append(target + '/')
+                    else:
+                        if files:
+                            file_list.append(target)
+
+            temp = temp.replace(TAGS_PATH + '/', '')
+            temp = (temp, file_count, file_list)
+            results.append(temp)
+
+    sorted_results = sorted(results, key=itemgetter(0))
+
+    return sorted_results
+
+def move(original_loc, new_loc):
+    a = "%s/%s" % (TAGS_PATH, original_loc)
+    b = "%s/%s" % (TAGS_PATH, new_loc)
+    shutil.move(a, b)
+
+    delete_cache('tag-list')
+
+def move_object(original_loc, new_loc):
+    full_orig_loc = target_cwd(original_loc)
+    full_new_loc = target_cwd(new_loc)
+
+    if not os.path.exists(full_orig_loc):
+        message('Object does not exist', error=True)
+        return
+
+    tags = tags_of(full_orig_loc)
+
+    # remove tags
+    remove([original_loc], tags, quiet=True)
+
+    # move object
+    shutil.move(full_orig_loc, full_new_loc)
+
+    # add tags
+    add([new_loc], tags, quiet=True)
+    message("Successfully moved %s to %s" % (original_loc, new_loc))
+
+def detailed_list(tag_filter = None, exact=False, paths_only=False, dirs=True, files=True):
+    filtered_list = filter_list(all_tags_detailed(dirs=dirs, files=files), 
+                                query=tag_filter, 
+                                detailed=True, 
+                                exact=exact)
+
+    for tag, count, file_list in filtered_list:
+        if not paths_only:
+            print "%s %s" % (str(count).ljust(10), tag)
+            pad = " "*10
+        else:
+            pad = ""
+
+        if len(file_list) > 0:
+            for f in file_list:
+                if (dirs and f[-1] == '/') or (files and f[-1] != '/'):
+                    print "%s%s" % (pad, f)
+
+def recursive_list_objects(tag_filter=None, dirs=True, files=True):
+    results = []
+    target_path = os.path.join(TAGS_PATH, tag_filter)
+
+    for dirname, dirnames, filenames in os.walk(target_path):
+        for symdir in dirnames:
+            temp = os.path.join(dirname, symdir)
+
+            if os.path.islink(temp):
+                item = os.readlink(temp)
+                if dirs:
+                    results.append(item + '/')
+
+        for filename in filenames:
+            temp = os.path.join(dirname, filename)
+            if os.path.islink(temp):
+                item = os.readlink(temp)
+                if files:
+                    results.append(item)
+
+    unique_results = set(results)
+    output = "\n".join(unique_results)
+
+    print output
+
+def list_tags(tag_filter = None, no_cache=False, exact=False, dirs=True, files=True):
+    filtered_list = filter_list(all_tags(no_cache=no_cache), 
+                                query=tag_filter, 
+                                exact=exact)
+
+    output = "\n".join(filtered_list)
+
+    print output
+
+def tags_of(target_obj):
+    results = []
+
+    for dirname, dirnames, filenames in os.walk(TAGS_PATH):
+        for subdirname in dirnames:
+            temp = os.path.join(dirname, subdirname)
+            
+            if os.path.islink(temp):
+                continue
+
+            file_count = 0
+            file_list = []
+            files = os.listdir(temp)
+
+            for f in files:
+                filename = os.path.join(temp, f)
+                if os.path.islink(filename):
+                    file_count += 1
+                    target = os.readlink(filename)
+
+                    if target == target_obj:
+                        found_tag = temp.replace("%s/" % TAGS_PATH, '')
+                        results.append(found_tag)
+
+    return results
+
+def list_tags_of(obj):
+    target_obj = target_cwd(obj)
+    print "\n".join(tags_of(target_obj))
+
+def create(tags, no_cache=False):
+    if tags == None:
+        message('Tags (-t) are required', error=True)
+        return
+
+    tag_list = all_tags(no_cache=no_cache)
+    tags = list(set(tags) - set(tag_list))
+
+    if len(tags) > 0:
+        print "source %s/create-tag %s" % (SCRIPTS_PATH, " ".join(tags))
+
+def remove(objects, tags, quiet=False):
+    tag_list = all_tags()
+
+    for obj in objects:
+        absfilename = target_cwd(obj)
+        basename = os.path.basename(absfilename)
+        if os.path.exists(absfilename):
+            for tag in tags:
+                tag_location = "%s/%s/%s" % (TAGS_PATH, tag, basename)
+
+                if tag in tag_list:
+                    if os.path.exists(tag_location):
+                        os.remove(tag_location)
+                        message("Removed tag %s from %s" % (tag, absfilename), quiet=quiet)
+                    else:
+                        message("%s is not tagged with %s" % (absfilename, tag))
+                else:
+                    message("Invalid tag: %s" % tag, error=True)
+
+def add(objects, tags, quiet=False):
+    tag_list = all_tags()
+
+    for obj in objects:
+        absfilename = target_cwd(obj)
+        basename = os.path.basename(absfilename)
+        if os.path.exists(absfilename):
+            for tag in tags:
+                tag_location = "%s/%s/%s" % (TAGS_PATH, tag, basename)
+
+                if tag in tag_list:
+                    os.symlink(absfilename, tag_location)
+                    message("Added tag %s to %s" % (tag, absfilename), quiet=quiet)
+                else:
+                    message("Invalid tag: %s" % tag, error=True)
+
+def target_cwd(target):
+    output = os.path.abspath(os.path.join(os.getcwd(), target))
+    return output
+
+def process_args():
+    parser = argparse.ArgumentParser(description='Manage tags', 
+                                     epilog=EPILOG,
+                                     formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("action", 
+                        choices=['add', 'remove', 'create', 'list', 'list-tags',
+                                 'list-objects', 'move', 'move-object', 'keys'])
+    parser.add_argument("-t", "--tag", nargs="*")
+    parser.add_argument("-o", "--object", nargs="*")
+    parser.add_argument("-f", "--filter")
+    parser.add_argument("-n", "--no-cache", action="store_true")
+    parser.add_argument("-d", "--detailed", action="store_true")
+    parser.add_argument("-e", "--exact", action="store_true")
+    parser.add_argument("-p", "--paths-only", action="store_true")
+    parser.add_argument("-r", "--recursive", action="store_true")
+
+    group = parser.add_mutually_exclusive_group()
+
+    group.add_argument("--dirs", action="store_true")
+    group.add_argument("--files", action="store_true")
+
+    args = parser.parse_args()
+
+    choice = args.action
+    tags = args.tag or []
+    objects = args.object or []
+    tag_filter = args.filter
+
+    no_cache = (False, True)[args.no_cache]
+    detailed = (False, True)[args.detailed]
+    exact = (False, True)[args.exact]
+    paths_only = (False, True)[args.paths_only]
+    recursive = (False, True)[args.recursive]
+    dirs = (False, True)[args.dirs]
+    files = (False, True)[args.files]
+
+    if dirs == files:
+        dirs = True
+        files = True
+
+    if choice == 'add':
+        add(objects, tags)
+
+    elif choice == 'remove':
+        remove(objects, tags)
+
+    elif choice == 'create':
+        create(tags, no_cache=no_cache)
+
+    elif choice == 'list':
+        if detailed:
+            detailed_list(tag_filter, exact=exact, paths_only=paths_only, dirs=dirs, files=files)
+        else:
+            list_tags(tag_filter, no_cache=no_cache, exact=exact)
+
+    elif choice == 'list-objects':
+        if tag_filter is None:
+            message('Tag filter (-f) is required', error=True)
+        else:
+            if recursive:
+                recursive_list_objects(tag_filter, dirs=dirs, files=files)
+            else:
+                detailed_list(tag_filter, exact=True, paths_only=True, dirs=dirs, files=files)
+
+    elif choice == 'list-tags':
+        obj_len = len(objects)
+        if obj_len == 0:
+            message('Target object (-o) is required', error=True)
+        elif obj_len > 1:
+            message('Only 1 target object is allowed', error=True)
+        else:
+            list_tags_of(objects[0])
+
+    elif choice == 'move':
+        if len(tags) == 2:
+            move(tags[0], tags[1])
+        else:
+            message('Input 2 tags (-t <old loc> <new loc>)', error=True)
+
+    elif choice == 'keys':
+        print " ".join(all_tags(no_cache=False))
+
+    elif choice == 'move-object':
+        if len(objects) == 2:
+            move_object(objects[0], objects[1])
+        else:
+            message('Input 2 tags (-o <old loc> <new loc>)', error=True)
+
+def main():
+    process_args()
+
+if __name__ == "__main__":
+    main()

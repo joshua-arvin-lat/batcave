@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+if [[ "$PS1" =~ "[batcave]" ]]; then
+  SCRIPT_LOC="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";
+  PS1=$(head -n 1 "$SCRIPT_LOC/ps1.orig");
+  PATH=$(head -n 1 "$SCRIPT_LOC/path.orig");
+
+  unset -f visit
+fi

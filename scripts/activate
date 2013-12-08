@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+if [[ ! "$PS1" =~ "[cave]" ]]; then
+  SCRIPT_LOC="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";
+
+  echo "$PS1" > "${SCRIPT_LOC}/ps1.orig";
+  PS1="\n\[$(tput bold)\]\[$(tput setaf 1)\][batcave]\[$(tput sgr0)\] $PS1";
+
+  echo "$PATH" > "${SCRIPT_LOC}/path.orig";
+  CAVE_SCRIPTS="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../bin" && pwd )"
+  PATH="$PATH:$CAVE_SCRIPTS"
+
+  complete -W "$(echo `tag keys`)" tag
+
+  visit() {
+    list="scripts tags files bin"
+    x=$1
+
+    [[ $list =~ $x ]] && cd "$SCRIPT_LOC/../$x" && ls -lahF || echo 'Invalid Location (scripts tags files bin)'
+  }
+fi
