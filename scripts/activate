@@ -18,4 +18,10 @@ if [[ ! "$PS1" =~ "[cave]" ]]; then
 
     [[ $list =~ $x ]] && cd "$SCRIPT_LOC/../$x" && ls -lahF || echo 'Invalid Location (scripts tags files bin)'
   }
+
+  dir() {
+    read var;
+    var=${var%/*};
+    echo $var;
+  }
 fi

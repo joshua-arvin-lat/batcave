@@ -1,0 +1,141 @@
+#!/usr/bin/env python
+
+from operator import itemgetter
+from colors import *
+import argparse
+import os, sys
+import shutil
+
+FILE_PATH = os.path.dirname(os.path.realpath(__file__))
+TAGS_PATH = os.path.abspath(os.path.join(FILE_PATH, '..', 'tags'))
+SCRIPTS_PATH = os.path.abspath(os.path.join(FILE_PATH, '..', 'scripts'))
+CACHE_PATH = os.path.abspath(os.path.join(FILE_PATH, '..', 'cache'))
+
+EPILOG = """
+example usage:
+  search -t tag1 -q "query"
+"""
+
+rows, columns = os.popen('stty size', 'r').read().split()
+LINE_LENGTH = int(columns)
+
+def print_line(text, main=False):
+    text = text.ljust(LINE_LENGTH)
+    if main:
+        text = bred(fwhite(text, True))
+    else:
+        text = bgreen(fwhite(text))
+
+    print text
+
+def print_fileline(number, text, query):
+    number = str(number).rjust(3)
+    number = fred(number + ':')
+    text = text.replace(query, bred(fwhite(query, True)))
+    print "%s %s" % (number, text)
+
+def get_targets(tags=[]):
+    directories = []
+    files = []
+
+    target_path = TAGS_PATH
+
+    for dirname, dirnames, filenames in os.walk(target_path):
+        if len(tags) > 0:
+            current_tag = dirname.replace(target_path + '/', '')
+            if len(current_tag) > 0:
+                match_found = False
+
+                for tag in tags:
+                    if tag in current_tag:
+                        match_found = True
+
+                if not match_found:
+                    continue
+
+        for symdir in dirnames:
+            temp = os.path.join(dirname, symdir)
+
+            if os.path.islink(temp):
+                item = os.readlink(temp)
+                directories.append(item)
+
+        for filename in filenames:
+            temp = os.path.join(dirname, filename)
+            if os.path.islink(temp):
+                item = os.readlink(temp)
+                files.append(item)
+
+    files = list(set(files))
+
+    return (files, directories)
+
+def search_directories(directories, query):
+    for directory in directories:
+        search_directory(directory, query)
+
+def search_directory(directory, query):
+    if not os.path.exists(directory):
+        return
+
+    for dirname, dirnames, filenames in os.walk(directory):
+        if ".git" in dirname:
+            continue
+
+        for filename in filenames:
+            temp = os.path.join(dirname, filename)
+            search_file(temp, query)
+
+def search_file(target_file, query):
+    try:
+        with open(target_file) as text_file:
+            content = [line.rstrip() for line in text_file]
+            target_file_displayed = False
+
+            for index, line in enumerate(content):
+                if query in line:
+                    if not target_file_displayed:
+                        print;
+                        print_line(target_file)
+                        target_file_displayed = True
+
+                    print_fileline(index + 1, line, query)
+
+    except IOError:
+        pass
+
+
+def search_files(files, query):
+    for target_file in files:
+        search_file(target_file, query)
+
+
+def execute(query, tags=[]):
+    files, directories = get_targets(tags)
+
+    print_line("Searching files", main=True)
+    search_files(files, query)
+
+    print;
+    print_line("Searching directory contents", main=True)
+    search_directories(directories, query)
+
+
+def process_args():
+    parser = argparse.ArgumentParser(description='Manage tags', 
+                                     epilog=EPILOG,
+                                     formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("query")
+    parser.add_argument("-t", "--tag", nargs="*")
+
+    args = parser.parse_args()
+    query = args.query
+    tags = args.tag or []
+
+    execute(query, tags)
+
+def main():
+    process_args()
+
+if __name__ == "__main__":
+    main()

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from operator import itemgetter
+from colors import *
 import argparse
 import os, sys
 import shutil
@@ -63,7 +64,7 @@ def read_cache(name):
 
     try:
         with open(cache_location(name)) as text_file:
-            content = [line.rstrip() for line in text_file]
+            content = [plain(line.rstrip()) for line in text_file]
 
     except IOError:
         return None
@@ -76,7 +77,7 @@ def save_cache(name, output):
 
 def message(text, error=False, quiet=False):
     if error:
-        print "Error: %s" % text
+        print "%s %s" % (fred("Error:"), bred(fwhite(text)))
     else:
         if quiet == False:
             print text
@@ -116,7 +117,7 @@ def all_tags(no_cache = False):
                 continue
 
             temp = temp.replace(TAGS_PATH + '/', '')
-            
+            temp = plain(temp)
             results.append(temp)
 
     sorted_results = sorted(results, key=str.lower)
@@ -185,7 +186,7 @@ def move_object(original_loc, new_loc):
     add([new_loc], tags, quiet=True)
     message("Successfully moved %s to %s" % (original_loc, new_loc))
 
-def detailed_list(tag_filter = None, exact=False, paths_only=False, dirs=True, files=True):
+def detailed_list(tag_filter = None, exact=False, paths_only=False, dirs=True, files=True, uncolored=False):
     filtered_list = filter_list(all_tags_detailed(dirs=dirs, files=files), 
                                 query=tag_filter, 
                                 detailed=True, 
@@ -193,6 +194,9 @@ def detailed_list(tag_filter = None, exact=False, paths_only=False, dirs=True, f
 
     for tag, count, file_list in filtered_list:
         if not paths_only:
+            if not uncolored:
+                tag = fcyan(tag)
+            
             print "%s %s" % (str(count).ljust(10), tag)
             pad = " "*10
         else:
@@ -201,9 +205,16 @@ def detailed_list(tag_filter = None, exact=False, paths_only=False, dirs=True, f
         if len(file_list) > 0:
             for f in file_list:
                 if (dirs and f[-1] == '/') or (files and f[-1] != '/'):
+                    if f[-1] == '/':
+                        if not uncolored:
+                            f = fmagenta(f)
+                    else:
+                        if not uncolored:
+                            f = fyellow(f)
+
                     print "%s%s" % (pad, f)
 
-def recursive_list_objects(tag_filter=None, dirs=True, files=True):
+def recursive_list_objects(tag_filter=None, dirs=True, files=True, uncolored=False):
     results = []
     target_path = os.path.join(TAGS_PATH, tag_filter)
 
@@ -214,17 +225,22 @@ def recursive_list_objects(tag_filter=None, dirs=True, files=True):
             if os.path.islink(temp):
                 item = os.readlink(temp)
                 if dirs:
-                    results.append(item + '/')
+                    item = fmagenta(item + '/')
+                    results.append(item)
 
         for filename in filenames:
             temp = os.path.join(dirname, filename)
             if os.path.islink(temp):
                 item = os.readlink(temp)
                 if files:
+                    item = fyellow(item)
                     results.append(item)
 
     unique_results = set(results)
     output = "\n".join(unique_results)
+
+    if uncolored:
+        output = plain(output)
 
     print output
 
@@ -259,13 +275,19 @@ def tags_of(target_obj):
 
                     if target == target_obj:
                         found_tag = temp.replace("%s/" % TAGS_PATH, '')
+                        found_tag = fcyan(found_tag)
                         results.append(found_tag)
 
     return results
 
-def list_tags_of(obj):
+def list_tags_of(obj, uncolored=False):
     target_obj = target_cwd(obj)
-    print "\n".join(tags_of(target_obj))
+    tags_output = "\n".join(tags_of(target_obj))
+
+    if uncolored:
+        print plain(tags_output)
+    else:
+        print tags_output
 
 def create(tags, no_cache=False):
     if tags == None:
@@ -282,10 +304,11 @@ def remove(objects, tags, quiet=False):
     tag_list = all_tags()
 
     for obj in objects:
-        absfilename = target_cwd(obj)
+        absfilename = plain(target_cwd(obj))
         basename = os.path.basename(absfilename)
         if os.path.exists(absfilename):
             for tag in tags:
+                tag = plain(tag)
                 tag_location = "%s/%s/%s" % (TAGS_PATH, tag, basename)
 
                 if tag in tag_list:
@@ -301,10 +324,11 @@ def add(objects, tags, quiet=False):
     tag_list = all_tags()
 
     for obj in objects:
-        absfilename = target_cwd(obj)
+        absfilename = plain(target_cwd(obj))
         basename = os.path.basename(absfilename)
         if os.path.exists(absfilename):
             for tag in tags:
+                tag = plain(tag)
                 tag_location = "%s/%s/%s" % (TAGS_PATH, tag, basename)
 
                 if tag in tag_list:
@@ -332,6 +356,7 @@ def process_args():
     parser.add_argument("-e", "--exact", action="store_true")
     parser.add_argument("-p", "--paths-only", action="store_true")
     parser.add_argument("-r", "--recursive", action="store_true")
+    parser.add_argument("-u", "--uncolored", action="store_true")
 
     group = parser.add_mutually_exclusive_group()
 
@@ -350,6 +375,7 @@ def process_args():
     exact = (False, True)[args.exact]
     paths_only = (False, True)[args.paths_only]
     recursive = (False, True)[args.recursive]
+    uncolored = (False, True)[args.uncolored]
     dirs = (False, True)[args.dirs]
     files = (False, True)[args.files]
 
@@ -368,7 +394,7 @@ def process_args():
 
     elif choice == 'list':
         if detailed:
-            detailed_list(tag_filter, exact=exact, paths_only=paths_only, dirs=dirs, files=files)
+            detailed_list(tag_filter, exact=exact, paths_only=paths_only, dirs=dirs, files=files, uncolored=uncolored)
         else:
             list_tags(tag_filter, no_cache=no_cache, exact=exact)
 
@@ -377,9 +403,9 @@ def process_args():
             message('Tag filter (-f) is required', error=True)
         else:
             if recursive:
-                recursive_list_objects(tag_filter, dirs=dirs, files=files)
+                recursive_list_objects(tag_filter, dirs=dirs, files=files, uncolored=uncolored)
             else:
-                detailed_list(tag_filter, exact=True, paths_only=True, dirs=dirs, files=files)
+                detailed_list(tag_filter, exact=True, paths_only=True, dirs=dirs, files=files, uncolored=uncolored)
 
     elif choice == 'list-tags':
         obj_len = len(objects)
@@ -388,7 +414,7 @@ def process_args():
         elif obj_len > 1:
             message('Only 1 target object is allowed', error=True)
         else:
-            list_tags_of(objects[0])
+            list_tags_of(objects[0], uncolored=uncolored)
 
     elif choice == 'move':
         if len(tags) == 2:
@@ -397,7 +423,7 @@ def process_args():
             message('Input 2 tags (-t <old loc> <new loc>)', error=True)
 
     elif choice == 'keys':
-        print " ".join(all_tags(no_cache=False))
+        print plain(" ".join(all_tags(no_cache=False)))
 
     elif choice == 'move-object':
         if len(objects) == 2:
